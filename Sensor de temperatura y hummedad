@@ -1,0 +1,41 @@
+#include <Wire.h>
+#include <Adafruit_AHTX0.h>
+
+Adafruit_AHTX0 aht10;
+
+void setup() {
+  Serial.begin(115200);
+
+  Wire.begin(21, 22);
+
+  Serial.println("Iniciando AHT10...");
+
+  if (aht10.begin()) {
+    Serial.println("AHT10 encontrado correctamente.");
+  } else {
+    Serial.println("ERROR: No se encontro el AHT10.");
+    Serial.println("Revisa las conexiones SDA, SCL, VCC y GND.");
+
+    while (1) {
+      delay(1000);
+    }
+  }
+}
+
+void loop() {
+  sensors_event_t datosHumedad, datosTemperatura;
+
+  aht10.getEvent(&datosHumedad, &datosTemperatura);
+
+  Serial.print("Temperatura: ");
+  Serial.print(datosTemperatura.temperature);
+  Serial.println(" °C");
+
+  Serial.print("Humedad: ");
+  Serial.print(datosHumedad.relative_humidity);
+  Serial.println(" %");
+
+  Serial.println("-------------------------");
+
+  delay(2000);
+}
