@@ -1,0 +1,351 @@
+// Alfuzzi - Ayra - Fourmentel G5
+
+#define ENABLE_DATABASE
+
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <U8g2lib.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <ESP32Time.h>
+#include <FirebaseClient.h>
+#include "time.h"
+
+#define LED 25
+#define BOTON_SUMAR_SW1 35
+#define BOTON_RESTAR_SW2 34
+#define DHTPIN 23
+#define DHTTYPE DHT11
+
+#define SSID "MECA-IoT-V2"
+#define PASS "IoT$2026"
+
+#define DATABASE_URL "https://tp-5-firebase-default-rtdb.firebaseio.com"
+#define WEB_API_KEY "AIzaSyBFQRSu89g0pV6KXylU7mauvtjwQ7NKWzQ"
+
+typedef enum {
+  RESET,
+  P1,
+  EP1,
+  P2,
+  E_MAS,
+  E_MENOS,
+  EP2
+} estados_t;
+
+estados_t estadoActual = RESET;
+
+float umbral = 28;
+float indiceCalor;
+
+FirebaseApp app;
+NoAuth no_auth;
+
+WiFiClientSecure ssl_client;
+using AsyncClient = AsyncClientClass;
+AsyncClient aClient(ssl_client);
+
+RealtimeDatabase Database;
+
+JsonWriter writer;
+object_t jsonData, objivoTemp, objetivoTime, objDia, objHora;
+
+const char *ntpServer = "pool.ntp.org";
+int gmtOffset = -3;
+int gmtOffsetSegundos = 0;
+
+DHT dht(DHTPIN, DHTTYPE);
+ESP32Time rtc;
+
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+
+void print_temperatura_umbral();
+void print_temperatura_umbral_y_actual(float temp);
+void temperatura_led(float temp);
+void print_ciclo_firebase();
+void cicloLogica();
+void subirDatos();
+unsigned long getTime();
+void processData(AsyncResult &aResult);
+
+unsigned long ciclo = 30000;
+unsigned long ultimaSubida = 0;
+unsigned long timestamp = 0;
+
+String uid;
+String databasePath;
+String parentPath;
+
+String tempPath = "/temperature";
+String timePath = "/timestamp";
+String datePath = "/date";
+String hourPath = "/time";
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(LED, OUTPUT);
+  pinMode(BOTON_SUMAR_SW1, INPUT);
+  pinMode(BOTON_RESTAR_SW2, INPUT);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(SSID, PASS);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+
+  u8g2.begin();
+  dht.begin();
+  u8g2.clearBuffer();
+  digitalWrite(LED, LOW);
+
+  gmtOffsetSegundos = gmtOffset * 3600;
+  configTime(gmtOffsetSegundos, 0, ntpServer);
+
+  struct tm timeinfo;
+
+  if (getLocalTime(&timeinfo)) {
+    rtc.setTimeStruct(timeinfo);
+    Serial.println("Hora sincronizada");
+  } else {
+    Serial.println("No se pudo obtener la hora");
+  }
+
+  ssl_client.setInsecure();
+  ssl_client.setConnectionTimeout(1000);
+  ssl_client.setHandshakeTimeout(5);
+
+  initializeApp(
+    aClient,
+    app,
+    getAuth(no_auth),
+    processData,
+    "Auth"
+  );
+
+  app.getApp<RealtimeDatabase>(Database);
+  Database.url(DATABASE_URL);
+}
+
+void loop() {
+  app.loop();
+
+  Serial.print(" Valor ");
+
+  int botonSumar = digitalRead(BOTON_SUMAR_SW1);
+  int botonRestar = digitalRead(BOTON_RESTAR_SW2);
+
+  float temperatura = dht.readTemperature();
+  float humedad = dht.readHumidity();
+
+  indiceCalor = dht.computeHeatIndex(temperatura, humedad, false);
+
+  Serial.println(indiceCalor);
+  temperatura_led(indiceCalor);
+
+  switch (estadoActual) {
+    case RESET:
+      estadoActual = P1;
+      break;
+
+    case P1:
+      Serial.println("P1");
+      print_temperatura_umbral_y_actual(indiceCalor);
+
+      if (botonSumar == LOW && botonRestar == LOW) {
+        estadoActual = EP1;
+      }
+      break;
+
+    case EP1:
+      Serial.println("EP1");
+
+      if (botonSumar == HIGH && botonRestar == HIGH) {
+        estadoActual = P2;
+      }
+      break;
+
+    case P2:
+      Serial.println("P2");
+      print_ciclo_firebase();
+
+      if (botonSumar == LOW) {
+        estadoActual = E_MAS;
+      } else if (botonRestar == LOW) {
+        estadoActual = E_MENOS;
+      }
+      break;
+
+    case E_MAS:
+      Serial.println("E MAS");
+      print_ciclo_firebase();
+
+      if (botonSumar == HIGH && botonRestar == HIGH) {
+        ciclo += 30000;
+        cicloLogica();
+        Serial.println(ciclo);
+        estadoActual = P2;
+      } else if (botonRestar == LOW) {
+        estadoActual = EP2;
+      }
+      break;
+
+    case E_MENOS:
+      Serial.println("E MENOS");
+      print_ciclo_firebase();
+
+      if (botonSumar == HIGH && botonRestar == HIGH) {
+        ciclo -= 30000;
+        cicloLogica();
+        Serial.println(ciclo);
+        estadoActual = P2;
+      } else if (botonSumar == LOW) {
+        estadoActual = EP2;
+      }
+      break;
+
+    case EP2:
+      Serial.println("EP2");
+
+      if (botonSumar == HIGH && botonRestar == HIGH) {
+        estadoActual = P1;
+      }
+      break;
+  }
+
+  subirDatos();
+}
+
+void cicloLogica() {
+  if (ciclo <= 30000) {
+    ciclo = 30000;
+  }
+}
+
+void print_ciclo_firebase() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+
+  u8g2.drawStr(0, 20, "Ciclo: ");
+
+  char textoCiclo[10];
+  sprintf(textoCiclo, "%lu segs", ciclo / 1000);
+
+  u8g2.drawStr(40, 20, textoCiclo);
+  u8g2.sendBuffer();
+}
+
+void subirDatos() {
+  if (!app.ready()) {
+    return;
+  }
+
+  if (millis() - ultimaSubida >= ciclo) {
+    timestamp = getTime();
+
+    if (timestamp == 0) {
+      return;
+    }
+
+    ultimaSubida = millis();
+
+    String dia = rtc.getTime("%Y-%m-%d");
+    String hora = rtc.getTime("%H:%M:%S");
+
+    uid = app.getUid().c_str();
+    databasePath = "/UsersData/dispositivo1/readings";
+    parentPath = databasePath + "/" + String(timestamp);
+
+    writer.create(objivoTemp, tempPath, indiceCalor);
+    writer.create(objetivoTime, timePath, timestamp);
+    writer.create(objDia, datePath, string_t(dia.c_str()));
+    writer.create(objHora, hourPath, string_t(hora.c_str()));
+
+    writer.join(
+      jsonData,
+      4,
+      objivoTemp,
+      objetivoTime,
+      objDia,
+      objHora
+    );
+
+    Database.set<object_t>(
+      aClient,
+      parentPath,
+      jsonData,
+      processData,
+      "RTDB_Send_Data"
+    );
+  }
+}
+
+unsigned long getTime() {
+  time_t now;
+  struct tm timeinfo;
+
+  if (!getLocalTime(&timeinfo)) {
+    return 0;
+  }
+
+  time(&now);
+  return now;
+}
+
+void processData(AsyncResult &aResult) {
+  if (!aResult.isResult()) {
+    return;
+  }
+
+  if (aResult.isError()) {
+    Serial.print("Error: ");
+    Serial.println(aResult.error().message());
+  }
+
+  if (aResult.available()) {
+    Serial.println("Operacion completada");
+  }
+}
+
+void print_temperatura_umbral() {
+  char textoTemperatura[10];
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 40, "T UMBRAL");
+
+  sprintf(textoTemperatura, "%.2f", umbral);
+  u8g2.drawStr(70, 40, textoTemperatura);
+
+  u8g2.sendBuffer();
+}
+
+void print_temperatura_umbral_y_actual(float temp) {
+  char textoTemperatura[10];
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+
+  u8g2.drawStr(0, 15, "T ACTUAL");
+  sprintf(textoTemperatura, "%.2f", temp);
+  u8g2.drawStr(70, 15, textoTemperatura);
+
+  u8g2.drawStr(0, 40, "T UMBRAL");
+  sprintf(textoTemperatura, "%.2f", umbral);
+  u8g2.drawStr(70, 40, textoTemperatura);
+
+  u8g2.sendBuffer();
+}
+
+void temperatura_led(float temp) {
+  if (temp < umbral) {
+    digitalWrite(LED, LOW);
+  } else {
+    digitalWrite(LED, HIGH);
+  }
+}
