@@ -1,0 +1,40 @@
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+
+Adafruit_INA219 sensorINA;
+
+void setup() {
+  Serial.begin(115200);
+
+  Wire.begin(21, 22);
+
+  if (sensorINA.begin()) {
+    Serial.println("INA219 encontrado correctamente");
+  } else {
+    Serial.println("No se encontro el INA219");
+    while (1);
+  }
+}
+
+void loop() {
+  float tensionShunt = sensorINA.getShuntVoltage_mV();
+  float tensionBus = sensorINA.getBusVoltage_V();
+  float corriente = sensorINA.getCurrent_mA();
+  float potencia = sensorINA.getPower_mW();
+
+  Serial.print("Tension: ");
+  Serial.print(tensionBus);
+  Serial.println(" V");
+
+  Serial.print("Corriente: ");
+  Serial.print(corriente);
+  Serial.println(" mA");
+
+  Serial.print("Potencia: ");
+  Serial.print(potencia);
+  Serial.println(" mW");
+
+  Serial.println("--------------------");
+
+  delay(1000);
+}
