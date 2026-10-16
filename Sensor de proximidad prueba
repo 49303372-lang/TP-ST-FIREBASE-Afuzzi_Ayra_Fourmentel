@@ -1,0 +1,21 @@
+#define PIN_SENSOR 27
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PIN_SENSOR, INPUT);
+
+  Serial.println("Sensor LD2410C iniciado");
+}
+
+void loop() {
+  int lecturaPresencia = digitalRead(PIN_SENSOR);
+
+  if (lecturaPresencia == HIGH) {
+    Serial.println("PERSONA DETECTADA");
+  } else {
+    Serial.println("NO HAY PERSONA");
+  }
+
+  delay(500);
+}
