@@ -1,0 +1,19 @@
+#define PIN_POT 34
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PIN_POT, INPUT);
+
+  Serial.println("Simulacion de sensor MQ-2");
+  Serial.println("Girando el potenciometro se simula el nivel de gas.");
+}
+
+void loop() {
+  int lecturaGas = analogRead(PIN_POT);
+
+  Serial.print("Nivel de gas simulado: ");
+  Serial.println(lecturaGas);
+
+  delay(500);
+}
