@@ -1,0 +1,178 @@
+
+// Alfuzzi - Ayra - Fourmentel
+
+#include <DHT.h>
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <ESP32Time.h>
+
+#define PIN_LED 25
+#define PIN_BOTON_MAS 35
+#define PIN_BOTON_MENOS 34
+#define PIN_DHT 23
+
+#define SENSORLUZ
+#define SENSORGAS
+
+#define SDA_PIN 21
+#define SCL_PIN 22
+
+#define TIPO_DHT DHT11
+
+DHT sensorDHT(PIN_DHT, TIPO_DHT);
+
+U8G2_SH1106_128X64_NONAME_F_HW_I2C pantalla(
+  U8G2_R0, U8X8_PIN_NONE, SCL_PIN, SDA_PIN
+);
+
+ESP32Time reloj;
+
+typedef enum {
+  P1,
+  EP1,
+  P2,
+  MAS_GMT,
+  MEN_GMT,
+  EP2,
+  P3,
+  MAS_VAR,
+  MEN_VAR,
+  EP3
+} estados_t;
+
+estados_t estadoActual = P1;
+
+void setup() {
+}
+
+void loop() {
+  switch (estadoActual) {
+    case P1:
+      mostrarP1();
+
+      if (digitalRead(PIN_BOTON_MAS) == LOW) {
+        estadoActual = EP1;
+      }
+      break;
+
+    case EP1:
+      if (digitalRead(PIN_BOTON_MAS) == HIGH) {
+        estadoActual = P2;
+      }
+      break;
+
+    case P2:
+      mostrarP2();
+
+      if (digitalRead(PIN_BOTON_MAS) == LOW) {
+        estadoActual = MAS_GMT;
+      }
+
+      if (digitalRead(PIN_BOTON_MENOS) == LOW) {
+        estadoActual = MEN_GMT;
+      }
+      break;
+
+    case MAS_GMT:
+      if (digitalRead(PIN_BOTON_MAS) == HIGH) {
+        estadoActual = P2;
+        GMT = GMT + 1;
+      }
+
+      if (digitalRead(PIN_BOTON_MENOS) == LOW) {
+        estadoActual = EP2;
+      }
+      break;
+
+    case MEN_GMT:
+      if (digitalRead(PIN_BOTON_MENOS) == HIGH) {
+        estadoActual = P2;
+        GMT = GMT - 1;
+      }
+
+      if (digitalRead(PIN_BOTON_MAS) == LOW) {
+        estadoActual = EP2;
+      }
+      break;
+
+    case EP2:
+      if (digitalRead(PIN_BOTON_MAS) == HIGH &&
+          digitalRead(PIN_BOTON_MENOS) == HIGH) {
+        estadoActual = P3;
+      }
+      break;
+
+    case P3:
+      mostrarP3();
+
+      if (digitalRead(PIN_BOTON_MAS) == LOW) {
+        estadoActual = MAS_VAR;
+      }
+
+      if (digitalRead(PIN_BOTON_MENOS) == LOW) {
+        estadoActual = MEN_VAR;
+      }
+      break;
+
+    case MAS_VAR:
+      if (digitalRead(PIN_BOTON_MAS) == HIGH) {
+        estadoActual = P3;
+        ValUmbral = ValUmbral + 1;
+      }
+
+      if (digitalRead(PIN_BOTON_MENOS) == LOW) {
+        estadoActual = EP3;
+      }
+      break;
+
+    case MEN_VAR:
+      if (digitalRead(PIN_BOTON_MENOS) == HIGH) {
+        estadoActual = P3;
+        ValUmbral = ValUmbral - 1;
+      }
+
+      if (digitalRead(PIN_BOTON_MAS) == LOW) {
+        estadoActual = EP3;
+      }
+      break;
+
+    case EP3:
+      if (digitalRead(PIN_BOTON_MAS) == HIGH &&
+          digitalRead(PIN_BOTON_MENOS) == HIGH) {
+        estadoActual = P1;
+      }
+      break;
+  }
+}
+
+float leerTemperatura() {
+  float temperatura = sensorDHT.readTemperature();
+  return temperatura;
+}
+
+int leerLuz() {
+  int nivelLuz = analogRead(SENSORLUZ);
+  return nivelLuz;
+}
+
+float leerHumedad() {
+  float humedadActual = sensorDHT.readHumidity();
+  return humedadActual;
+}
+
+int leerGas() {
+  int nivelGas = analogRead(SENSORGAS);
+  return nivelGas;
+}
+
+float leerOpto() {
+  return 0;
+}
+
+float leerCorriente() {
+  return 0;
+}
+
+float leerPresencia() {
+  return 0;
+}
