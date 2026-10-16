@@ -1,0 +1,19 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C pantalla(0x27, 16, 2);
+
+void setup() {
+  Wire.begin(21, 22);
+
+  pantalla.init();
+  pantalla.backlight();
+}
+
+void loop() {
+  pantalla.setCursor(0, 0);
+  pantalla.print("Hola, ESP32!");
+
+  pantalla.setCursor(0, 1);
+  pantalla.print("LCD 16x2");
+}
